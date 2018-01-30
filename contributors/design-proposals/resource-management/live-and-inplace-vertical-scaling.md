@@ -63,15 +63,15 @@ An example of the usage of resizePolicy attribute in a pod spec:
 
 ```yaml
 resources:
-	requests:
-		cpu: 100m
-		memory: 1Gi
-	limits:
-		cpu: 1000m
-		memory: 1Gi
-	resizePolicy:
-		cpu: LiveResizeable
-		memory: RestartOnly
+    requests:
+        cpu: 100m
+        memory: 1Gi
+    limits:
+        cpu: 1000m
+        memory: 1Gi
+    resizePolicy:
+        cpu: LiveResizeable
+        memory: RestartOnly
 ```
 
 For the above example, if there is a change to cpu request or limit it can be vertically scaled only if the memory request and limit remained the same, otherwise the RestartOnly policy for memory would override the policy for CPU, and the Pod (container, if container-alone restart is allowed) would need to be restarted.
@@ -81,32 +81,32 @@ An example of change in CPU resource `request` size and usage of `resizeAction` 
 // before the change
 ```yaml
 resources:
-	requests:
-		cpu: **100m**
-		memory: 1Gi
-	limits:
-		cpu: 1000m
-		memory: 1Gi
-	resizePolicy:
-		cpu: LiveResizeable
-		memory: RestartOnly
+    requests:
+        cpu: **100m**
+        memory: 1Gi
+    limits:
+        cpu: 1000m
+        memory: 1Gi
+    resizePolicy:
+        cpu: LiveResizeable
+        memory: RestartOnly
 ```
 
 // after the change
 ```yaml
 annotation:
-	resizeAction: LiveResizePreferred
+resizeAction: LiveResizePreferred
 ...
 resources:
-	requests:
-		cpu: **400m**
-		memory: 1Gi
-	limits:
-		cpu: 1000m
-		memory: 1Gi
-	resizePolicy:
-		cpu: LiveResizeable
-		memory: RestartOnly
+    requests:
+        cpu: **400m**
+        memory: 1Gi
+    limits:
+        cpu: 1000m
+        memory: 1Gi
+    resizePolicy:
+        cpu: LiveResizeable
+        memory: RestartOnly
 ```
 
 ## Combining Stateful Set Update options with Vertical Scaling
@@ -120,3 +120,177 @@ In the table below we propose how the resource resizing directives for vertical 
 |RestartOnly (or Action=Restart)|Resize resource with restart (with delete command)|Resize resource with restart (with allowed spec update commands)|
 |LiveResizeable (and Action=LiveResize)|Resize resource live only (with allowed spec update commands)|Resize resource live only (with allowed spec update commands)|
 LiveResizeable (and Action=LiveResizePreferred or no Action specified)|Resize resource with live resize preferred (with allowed spec update commands), i.e., resize resource with restart (with delete command) if not able to resize live.|Resize resource with live resize preferred (with allowed spec update commands), i.e., resize resource with restart (managed by controller) if not able to resize live.|
+
+## Desired Approach
+
+Any valid method to update the pod spec should be applicable for vertical scaling, e.g., using kubectl commands set, patch, apply, edit.
+Logs associated with the pod will capture the failure/success of the resize command.
+The controller will continue to attempt the update to the spec while there is a difference between the current size and size in updated spec.
+If an update is partially successful, user can know this from the logs and attempt to rectify the situation by submitting new updates (that can restore original size(s) or go for a size feasible on all the nodes). 
+
+The policy for vertical scaling can itself be mutable.
+It is desirable to submit a change in policy, confirm its acceptance (by re-reading the changed pod spec) and then submit a change to a resource size impacted by that policy. 
+
+# Design and Implementation
+
+This section highlights some of implementation details by describing API changes and the workflow of vertical scaling on a pod.
+
+## Changes on API and key components
+
+This section describes briefly API changes for pod-level vertical scaling and the related changes on the 'API server', the 'Scheduler', and the 'Kubelet'.
+
+* ResizeRequest
+
+A new data structure, ResizeRequest, is added to v1.PodSpec:
+
+```go
+const (
+    ResizeRequested ResizeStatus = "Requested"
+    ResizeAccepted ResizeStatus = “Accepted”
+    ResizeRejected ResizeStatus = “Rejected”
+    ResizeNone      ResizeStatus = "None"
+)
+
+type ResizeRequest struct {
+    RequestStatus ResizeStatus
+    NewResources  []ResourceRequirements // indexed by containers’ index
+}
+
+Type PodSpec {
+    …
+    ResizeRequest ResizeRequest
+    ...
+}
+```
+
+ResizeRequest has two variables, RequestStatus and NewResources.
+RequestStatus represents the status of a resource resizing request.
+ResizeRequested indicates resource resizing for a pod is requested.
+ResizedAccepted and ResizedRejected means that the requested resource resizing is accepted and rejected, respectively, by the Scheduler.
+The NewResources is an array indexed by a container’s index and its each entry holds new resource requirements of a container that needs to resize.
+
+Given a new PodSpec with new resource requirements from a client, first the 'API server' validates it.
+If it is valid, the 'API server' sets the RequestStatus to ResizedRequested and copies the new resource requirements of each container into the NewResources.
+Also, the 'API server' restores the resource requirements of each container of the PodSpec to the original and writes the revised PodSpec to ETCD to communicate with the Scheduler.
+This is because at this moment the PodSpec on ETCD shouldn’t be updated with new resource requirements.
+
+For a pod with ResizeRequested, the 'Scheduler' checks if the node on which the pod currently runs has enough resources to resize the pod.
+The Scheduler notify the 'API server' of the result via 'Resizing' API operation, which will be describe below.
+
+* Resizing
+
+A new API, Resizing, for the 'scheduler' is introduced:
+
+```go
+// Resizing resizes the resources allocated to a pod
+type Resizing struct {
+    metav1.TypeMeta
+    metav1.ObjectMeta
+    Request ResizeRequest
+}
+```
+
+Resizing has the metadata of a pod to resize and a value of ResizeRequest that holds the status of a resizing request, which indicates whether the resizing is feasible or not, and new resource requirements of the pod.
+
+Once the 'Scheduler' determine whether a resource resizing on a pod is feasible, or not, it notifies to the API server via this Resizing API.
+ObjectMeta.Namespace/Name are set to the Namespace and Name of the pod to resize and ResizeRequest is set with new resource requirements.
+
+Given a Resizing API operation, the ResizeStatus of the PodSpec of a Pod is updated according to that of the Resizing operation.
+If the ResizeStatus is ResizeAccepted, the API server updates the ResourceRequirement of each container of a pod with new resource requirements on ETCD.
+
+* PodResized
+
+A new pod condition, PodResized, and condition status for that is added to v1.PodCondition:
+
+```go
+// These are valid conditions of pod.
+const (
+       // PodResized represents the status of the resizing process for this pod
+    PodResized PodConditionType = "PodResized"
+    PodReasonUnresizable   = "Unresizable"
+    PodReasonResizerFailed = "ResizerFailed"
+)
+const (
+    ConditionRequested ConditionStatus = "Requested"
+    ConditionAccepted  ConditionStatus = "Accepted"
+    ConditionRejected  ConditionStatus = "Rejected"
+    ConditionDone      ConditionStatus = "Done"
+)
+```
+
+The pod condition of PodResized represents the status of the resizing process.
+The PodResized Condition is updated by the `Kubelet` according to the ResizeStatus, which is updated by the 'API server'.
+
+Basically, when the ResizeStatus is changed, the `Kubelet` updates the PodResized condition accordingly.
+In case of ConditionDone, the `Kubelet` sets the PodResized of a Pod to it when all the containers that need to be resized complete to be resized.
+
+
+* A new additional hash, called `expectedHashNoResources', added for `Kubelet` to detect a change on resource requirements
+
+In order to watch resource requirement changes efficiently, a new additional hash is added to kubecontainer.ContainerStatus (and that is also stored as a one of the container’s labels).
+This hash is calculated with a container’s spec munged with an empty v1.ResourceRequirements.
+In addition to the existing container spec’s hash, Kubelet uses this new hash to detect a change on resource requirements of a container.
+Without this new hash, still Kubelet could detect a change on resource requirement with the existing hash, but needs to compare every entry in the container’s spec to identify which entry changes.
+The following is the details. 
+
+```go
+expectedHash := kubecontainer.HashContainer(&container)
+containerChanged := containerStatus.Hash != expectedHash
+if containerChanged {
+    // Something in the container’s spec changed. 
+    // So, see if it is just a change only on resource requirements.
+    mungedContainer := container
+    mungedContainer.Resources = v1.ResourceRequirements{}
+    expectedHashNoResources := kubecontainer.HashContainer(&mungedContainer)
+    containerChangedToStart = containerStatus.HashNoResources != expectedHashNoResources
+
+    if containerChangedToStart {
+        // This is a change on something other than resource requirements, so it needs to restart a container
+    } else {
+        // This is a change only on resource requirements.
+    }
+}
+```
+
+## Implementation Phases
+
+* Phase 1 - Introduce live and in-place vertical scaling on a pod
+
+Status: In progress, a working prototype implemented originally in the master branch (v1.10-alpha)
+
+The working code is available at [https://github.com/YoungjaeLee/kubernetes](https://github.com/YoungjaeLee/kubernetes) (the qos-master branch)
+
+* Phase 2 - Adding support for live and in-place vertical scaling in StatefulSet
+
+Status: In progress in the master branch (v1.10-alpha)
+
+
+# Related issues
+
+1. QoS class change by resize is not supported.
+
+For each of the Burstable and the Best-effort class, the Kubelet maintains a class-level cgroup under the ‘kubepods’ cgroup, which is the parent cgroup of pods of each QoS class. (e.g. kubepods/burstable is the parent cgroup of Burstable pods).
+So, in order to change the QoS class of a pod, it needs not only to resize resources, but also to change its parent cgroup properly.
+But, once a pod is created, its parent cgroup cannot be changed with the current Docker API. So, the QoS-class of a pod cannot be changed by resource resizing.
+
+2. Memory-resizing to change a request value might not take effect for Burstable pods.
+
+For Burstable pods, a request value for memory resource determines the value of a score for the OOM killer, but Docker doesn’t support to change dynamically the score of an existing container.
+So, the change to a memory request value doesn’t take effect for Burstable pods on the OOM killer’s behavior.
+But, for Guaranteed and Best-effort pods, this is not an issue because the score is fixed regardless of its memory request value. (in this case, the memory request value is used only for admission control by Scheduler) 
+
+3. Memory-resizing to decrease its limit may fail on the Kubelet in some circumstances.
+
+By default, the Kubelet requires disabling swap. With swap disabled, memory-resizing to decrease fails when there is not enough free memory that can be reclaimed.
+Specifically, the cgroup change to write a new limit value to memory.limit_in_bytes that is smaller than the current value fails as the Linux kernel fails to reclaim memory in use exceeding the new value.
+
+4. Memory-resizing on memory-backed storage (emptydir backed by memory)
+
+In the perspective of resizing, there is no difference between normal memory and the emptydir memory.
+Basically, if the memory allocated to a container is resized, the amount of memory available to an emptydir changes accordingly.
+
+With respect to usage accounting, the emptydir memory has a little difference (not specific to resizing.).
+The emptydir memory is accounted to a container that allocates the memory to store a file in the emptydir.
+For example, in a case where two containers share a memory-backed emptydir, the memory used to store a file is accounted to one of the containers that created the file and wrote its data, even though the other container is able to read/modify the file as if the file resides on its own allocated memory.
+If the second container appends some data at the end of the file, the corresponding memory is accounted to the second container since it is allocated by the second container.
+
