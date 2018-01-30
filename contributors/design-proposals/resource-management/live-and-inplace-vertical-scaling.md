@@ -34,7 +34,7 @@ So we need the means to express and implement the best approach for resizing for
 
 # Use Cases
 
-* After deploying a service/application through `StatefulSet`, I want to change the amount of resources (for now, CPU and memory) allocated to each pod of the statefulset without restarting the pods.
+* After deploying a service/application through `StatefulSet`, I want to resize, by giving a updated pod spec with new resource sizes, the resources (for now, CPU and memory) allocated to each pod of the statefulset without restarting the pods.
 
 # Objectives
 
@@ -50,17 +50,73 @@ To express the policy for resizing in a pod spec, we introduce resource attribut
 This attribute will be available per resource (such as cpu, memory) and so is adequate to indicate whether the workload can handle and prefer a change in each resource’s allocation for it without restarting.
 With potentially multiple containers and multiple resizeable resources for each in a Pod, the response to an update of the pod spec will be determined by the a precedence order among the attribute values with RestartOnly dominating LiveResizeable, i.e., if two resources have been resized in the update to the spec and one of them has a policy of RestartOnly then the pod would be restarted to realize both updates.
 
-We can optionally introduce an action annotation resourceResizeAction with following choices for value:
+We can optionally introduce an action annotation `resizeAction` with following choices for value:
 * Restart. (default)
 * LiveResize.
 * LiveResizePreferred.
 
 If used, this would be included as part of the patch or appropriate update command providing the spec update for the resize.
 It would indicate the preference of user at the time of resize.
-Specifically, Restart for resourceResizeAction would indicate the pod be restarted for the corresponding resizing of resource(s), LiveResize would indicate the pod not be restarted the resize be realized live, and LiveResizePreferred would indicate that the resize be realized preferrably live but if that fails for any reason to accomplish it with a restart.
+Specifically, Restart for `resizeAction` would indicate the pod be restarted for the corresponding resizing of resource(s), LiveResize would indicate the pod not be restarted the resize be realized live, and LiveResizePreferred would indicate that the resize be realized preferrably live but if that fails for any reason to accomplish it with a restart.
 
-Usage of resizePolicy attribute in a pod spec:
+An example of the usage of resizePolicy attribute in a pod spec:
 
 ```yaml
-Resources:
+resources:
+	requests:
+		cpu: 100m
+		memory: 1Gi
+	limits:
+		cpu: 1000m
+		memory: 1Gi
+	resizePolicy:
+		cpu: LiveResizeable
+		memory: RestartOnly
+```
 
+For the above example, if there is a change to cpu request or limit it can be vertically scaled only if the memory request and limit remained the same, otherwise the RestartOnly policy for memory would override the policy for CPU, and the Pod (container, if container-alone restart is allowed) would need to be restarted.
+
+An example of change in CPU resource `request` size and usage of `resizeAction` annotation with the updated spec.
+
+// before the change
+```yaml
+resources:
+	requests:
+		cpu: **100m**
+		memory: 1Gi
+	limits:
+		cpu: 1000m
+		memory: 1Gi
+	resizePolicy:
+		cpu: LiveResizeable
+		memory: RestartOnly
+```
+
+// after the change
+```yaml
+annotation:
+	resizeAction: LiveResizePreferred
+...
+resources:
+	requests:
+		cpu: **400m**
+		memory: 1Gi
+	limits:
+		cpu: 1000m
+		memory: 1Gi
+	resizePolicy:
+		cpu: LiveResizeable
+		memory: RestartOnly
+```
+
+## Combining Stateful Set Update options with Vertical Scaling
+
+'StatefulSet' supports two update options with spec.updateStrategy.type, where OnDelete applies the changed spec when restarting a pod after an explicit delete command and the RollingUpdate is applied by the controller by restarting each of the pods that are members of the Stateful set with the changed values, in reverse ordinal sequence (see [https://kubernetes.io/docs/tutorials/stateful-application/basic-stateful-set/#updating-statefulsets](https://kubernetes.io/docs/tutorials/stateful-application/basic-stateful-set/#updating-statefulsets) for more details).
+
+In the table below we propose how the resource resizing directives for vertical scaling can be applied in conjunction with the 'StatefulSet' update strategy.
+
+|resizePolicy (resizeAction)|OnDelete|RollingUpdate|
+|---|---|---|
+|RestartOnly (or Action=Restart)|Resize resource with restart (with delete command)|Resize resource with restart (with allowed spec update commands)|
+|LiveResizeable (and Action=LiveResize)|Resize resource live only (with allowed spec update commands)|Resize resource live only (with allowed spec update commands)|
+LiveResizeable (and Action=LiveResizePreferred or no Action specified)|Resize resource with live resize preferred (with allowed spec update commands), i.e., resize resource with restart (with delete command) if not able to resize live.|Resize resource with live resize preferred (with allowed spec update commands), i.e., resize resource with restart (managed by controller) if not able to resize live.|
