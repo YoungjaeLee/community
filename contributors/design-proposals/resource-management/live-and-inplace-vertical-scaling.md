@@ -13,7 +13,7 @@ The initial focus is on enabling this for Statefulsets, in particular, though th
 # Motivation
 
 Resources needed by containers can change over time for a variety of reasons - moving from live-test mode to production usage, change in user load or dataset sizes each of which again might come about for a variety of reasons.
-Deployments and Statefulsets support the capability to change Request and Limit values specified for a container through supported pod spec update methods.
+`Statefulset` supports the capability to change Request and Limit values specified for a container through supported pod spec update methods.
 However, they currently require the pods be restarted to run with the new resource sizes.
 
 There are a few reasons why restarting may not be desirable particularly for stateful services.
@@ -41,7 +41,7 @@ So we need the means to express and implement the best approach for resizing for
 # Objectives
 
 1. Enable live and in-place resource resizing on a pod.
-2. Add support for live and in-place resource resizing in `StatefulSet' controller.
+2. Add support for live and in-place resource resizing in `StatefulSet` controller.
 
 # API and Usage
 
@@ -113,7 +113,7 @@ resources:
 
 ## Combining Stateful Set Update options with Vertical Scaling
 
-'StatefulSet' supports two update options with spec.updateStrategy.type, where OnDelete applies the changed spec when restarting a pod after an explicit delete command and the RollingUpdate is applied by the controller by restarting each of the pods that are members of the Stateful set with the changed values, in reverse ordinal sequence (see [https://kubernetes.io/docs/tutorials/stateful-application/basic-stateful-set/#updating-statefulsets](https://kubernetes.io/docs/tutorials/stateful-application/basic-stateful-set/#updating-statefulsets) for more details).
+`StatefulSet` supports two update options with `spec.updateStrategy.type`, where OnDelete applies the changed spec when restarting a pod after an explicit delete command and the RollingUpdate is applied by the controller by restarting each of the pods that are members of the Stateful set with the changed values, in reverse ordinal sequence (see [https://kubernetes.io/docs/tutorials/stateful-application/basic-stateful-set/#updating-statefulsets](https://kubernetes.io/docs/tutorials/stateful-application/basic-stateful-set/#updating-statefulsets) for more details).
 
 In the table below we propose how the resource resizing directives for vertical scaling can be applied in conjunction with the 'StatefulSet' update strategy.
 
