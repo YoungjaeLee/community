@@ -139,7 +139,7 @@ This section highlights some of implementation details by describing API changes
 
 This section describes briefly API changes for pod-level vertical scaling and the related changes on the 'API server', the 'Scheduler', and the 'Kubelet'.
 
-* ResizeRequest
+* **ResizeRequest**
 
 A new data structure, ResizeRequest, is added to v1.PodSpec:
 
@@ -177,7 +177,7 @@ This is because at this moment the PodSpec on ETCD shouldn’t be updated with n
 For a pod with ResizeRequested, the 'Scheduler' checks if the node on which the pod currently runs has enough resources to resize the pod.
 The Scheduler notify the 'API server' of the result via 'Resizing' API operation, which will be describe below.
 
-* Resizing
+* **Resizing**
 
 A new API, Resizing, for the 'scheduler' is introduced:
 
@@ -198,7 +198,7 @@ ObjectMeta.Namespace/Name are set to the Namespace and Name of the pod to resize
 Given a Resizing API operation, the ResizeStatus of the PodSpec of a Pod is updated according to that of the Resizing operation.
 If the ResizeStatus is ResizeAccepted, the API server updates the ResourceRequirement of each container of a pod with new resource requirements on ETCD.
 
-* PodResized
+* **PodResized**
 
 A new pod condition, PodResized, and condition status for that is added to v1.PodCondition:
 
@@ -225,7 +225,7 @@ Basically, when the ResizeStatus is changed, the `Kubelet` updates the PodResize
 In case of ConditionDone, the `Kubelet` sets the PodResized of a Pod to it when all the containers that need to be resized complete to be resized.
 
 
-* A new additional hash, called `expectedHashNoResources', added for `Kubelet` to detect a change on resource requirements
+* **A new additional hash, called `expectedHashNoResources', added for `Kubelet` to detect a change on resource requirements**
 
 In order to watch resource requirement changes efficiently, a new additional hash is added to kubecontainer.ContainerStatus (and that is also stored as a one of the container’s labels).
 This hash is calculated with a container’s spec munged with an empty v1.ResourceRequirements.
