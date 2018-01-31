@@ -36,6 +36,8 @@ So we need the means to express and implement the best approach for resizing for
 
 * After deploying a service/application through `StatefulSet`, I want to resize, by giving a updated pod spec with new resource sizes, the resources (for now, CPU and memory) allocated to each pod of the statefulset without restarting the pods.
 
+* A (vertical) pod auto-scaler (c.f. [a related issue](https://github.com/kubernetes/features/issues/21)) can utilize this feature, while currently it does resize a pod with restart only.
+
 # Objectives
 
 1. Enable live and in-place resource resizing on a pod.
