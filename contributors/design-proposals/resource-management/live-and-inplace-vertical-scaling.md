@@ -225,7 +225,7 @@ Basically, when the ResizeStatus is changed, the `Kubelet` updates the PodResize
 In case of ConditionDone, the `Kubelet` sets the PodResized of a Pod to it when all the containers that need to be resized complete to be resized.
 
 
-* **A new additional hash, called `expectedHashNoResources', added for `Kubelet` to detect a change on resource requirements**
+* **A new additional hash, called `expectedHashNoResources`, added for `Kubelet` to detect a change on resource requirements**
 
 In order to watch resource requirement changes efficiently, a new additional hash is added to kubecontainer.ContainerStatus (and that is also stored as a one of the container’s labels).
 This hash is calculated with a container’s spec munged with an empty v1.ResourceRequirements.
