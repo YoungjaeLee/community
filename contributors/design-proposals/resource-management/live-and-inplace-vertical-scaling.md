@@ -258,25 +258,25 @@ This describes the sequence of a pod-level vertical scaling example to resize th
 
 ![Process](live-and-inplace-vertical-scaling.png)
 
-0) A pod has 1 CPU.
+0. A pod has 1 CPU.
 
-1) A client requests resource resizing on the pod with a new PodSpec with 2 CPU.
+1. A client requests resource resizing on the pod with a new PodSpec with 2 CPU.
 
-2) The API server updates the PodSpec with ResizeRequest on etcd
+2. The API server updates the PodSpec with ResizeRequest on etcd
 
-3) The PodSpec is updated on etcd.
+3. The PodSpec is updated on etcd.
 
-4) The Scheduler checks if the resizing is feasible and, if so, issues a Resizing API operation with the ResizeRequest of the “Accepted” status.
+4. The Scheduler checks if the resizing is feasible and, if so, issues a Resizing API operation with the ResizeRequest of the “Accepted” status.
 
-5) The API server updates the PodSpec with the new resource requirement on etcd and also modifies the ResizeRequest of the PodSpec to “Accepted”.
+5. The API server updates the PodSpec with the new resource requirement on etcd and also modifies the ResizeRequest of the PodSpec to “Accepted”.
 
-6), 7) The Kubelet updates the PodResized condition to “Accepted”.
+6., 7. The Kubelet updates the PodResized condition to “Accepted”.
 
-8) The Kubelet detects the change of resource requirements on the container and updates the cgroup configuration of the container via UpdateContainerResources CRI interface.
+8. The Kubelet detects the change of resource requirements on the container and updates the cgroup configuration of the container via UpdateContainerResources CRI interface.
 
-9) The Kubelet modifies the status of the PodResized condition to Done after every update on the cgroup configuration of all containers to resize is done. 
+9. The Kubelet modifies the status of the PodResized condition to Done after every update on the cgroup configuration of all containers to resize is done. 
 
-10) It completes to resize the pod to have 2 CPUs.
+10. It completes to resize the pod to have 2 CPUs.
 
 
 ## Implementation Phases
