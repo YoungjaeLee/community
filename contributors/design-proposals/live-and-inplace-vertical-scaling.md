@@ -1,4 +1,4 @@
-Live and In-place Vertical Scaling Proposal
+Live and In-Place Vertical Scaling Proposal
 ================
 
 _Authors:_
@@ -42,6 +42,14 @@ So we need the means to express and implement the best approach for resizing for
 
 1. Enable live and in-place resource resizing on a pod.
 2. Add support for live and in-place resource resizing in `StatefulSet` controller.
+
+# Limitations
+
+There are some limitations. The details will be described at the end of this doc.
+
+1. QoS class change by resize is not supported.
+2. Memory-resizing to change a request value might not take effect for Burstable pods.
+3. Memory-resizing to decrease its limit may fail on the Kubelet in some circumstances.
 
 # API and Usage
 
@@ -278,16 +286,15 @@ This describes the sequence of a pod-level vertical scaling example to resize th
 
 4. The Scheduler checks if the resizing is feasible and, if so, issues a Resizing API operation with the ResizeRequest of the “Accepted” status.
 
-5. The API server updates the PodSpec with the new resource requirement on etcd and also modifies the ResizeRequest of the PodSpec to “Accepted”.
+5. The API server updates the ResizeRequest of the PodSpec to “Accepted”.
 
 6., 7. The Kubelet updates the PodResized condition to “Accepted”.
 
-8. The Kubelet detects the change of resource requirements on the container and updates the cgroup configuration of the container via UpdateContainerResources CRI interface.
+8. The Kubelet acknowledges that the resizing request for the pod is accepted and resizes the allocated resources to the pod by cgroup updates or container restart according to its resize policy.
 
-9. The Kubelet modifies the status of the PodResized condition to Done after every update on the cgroup configuration of all containers to resize is done. 
+9. The Kubelet modifies the status of the PodResized condition to Done after confirming that the update on the cgroup configuration of all the containers to resize is done, or the containers are successfully restarted, then issues a Resizing API operation with ResizeRequest of the "Done" status.
 
-10. It completes to resize the pod to have 2 CPUs.
-
+10. The API server updates the ResourceRequirements of the PodSpec with new resource configurations. Now, it completes to resize the pod to have 2 CPUs.
 
 ## Implementation Phases
 
