@@ -159,37 +159,37 @@ const (
 
 type ResizeRequest struct {
     RequestStatus ResizeStatus
-    NewResources  []ResourceRequirements // indexed by containers’ name
+    NewResources  map[string]ResourceRequirements // indexed by containers’ name
 }
 
 Type PodSpec {
-    …
+    ...
     ResizeRequest ResizeRequest
     ...
 }
 ```
 
-ResizeRequest has two variables, RequestStatus and NewResources.
-RequestStatus represents the status of a resource resizing request.
-ResizeRequested indicates resource resizing for a pod is requested.
-ResizeAccepted and ResizeRejected means that the requested resource resizing is accepted and rejected, respectively, by the Scheduler.
-ResizeDone indicates that the actual resource resizing is done by Kubelet and the API server achknowledges and updates the pod spec on ETCD with the new resource requirement.
-The NewResources is an array indexed by a container’s index and its each entry holds new resource requirements of a container that needs to resize.
+`ResizeRequest` has two variables, which are `RequestStatus` and `NewResources`.
+`RequestStatus` represents the status of a resource resizing request.
+`ResizeRequested` indicates that resource resizing is requested.
+`ResizeAccepted` and `ResizeRejected` means that the requested resource resizing is accepted and rejected, respectively, by the Scheduler.
+`ResizeDone` indicates that the resource allocated to the pod has been resized through cgroup updates or container restart by Kubelet, then the API server has achknowledged and updated the pod spec on ETCD with the new resource requirement.
+`NewResources` is a map indexed by a container’s name and its each entry holds new resource requirements of a container that needs to resize.
 
-Given a new PodSpec with new resource requirements from a client, first the 'API server' validates it.
-If it is valid, the 'API server' sets the RequestStatus to ResizedRequested and copies the new resource requirements of each container into the NewResources.
+Given a new PodSpec with new resource requirements from a client, first the API server validates it.
+If it is valid, the 'API server' sets `RequestStatus` to `ResizedRequested` and copies the new resource requirements of each container into `NewResources`.
 Also, the 'API server' restores the resource requirements of each container of the PodSpec to the original and writes the revised PodSpec to ETCD to communicate with the Scheduler.
 This is because at this moment the PodSpec on ETCD shouldn’t be updated with new resource requirements.
 
-For a pod with ResizeRequested, the 'Scheduler' checks if the node on which the pod currently runs has enough resources to resize the pod.
-The Scheduler notify the 'API server' of the result via 'Resizing' API operation, which will be describe below.
+For a pod with `ResizeRequested`, the Scheduler checks if the node on which the pod currently is running fits to resize the pod.
+The Scheduler notify the 'API server' of the result via `Resizing` API operation, which will be describe below.
 
-For a pod with ResizeAccepted, accroding to the new resource requirements, the Kubelet updates cgroup values of desired containers when the policy is LiveResizeable, or restarts desired containers with new cgroup values when the policy is ContainerRestartOnly.
-Then, the Kubelet acknowledges the cgroup updates or container restarts has been successfully completed, then notifies the API server of it via 'Resizing' API operation.
+For a pod with `ResizeAccepted`, accroding to the new resource requirements, the Kubelet updates cgroup values of desired containers when the policy is LiveResizeable, or restarts desired containers with new cgroup values when the policy is ContainerRestartOnly.
+Then, if the Kubelet acknowledges that the cgroup updates or container restarts has been successfully completed, then notifies the API server of it via `Resizing` API operation.
 
 * **Resizing**
 
-A new API, Resizing, for the 'scheduler' is introduced:
+A new API, Resizing, for the Scheduler is introduced:
 
 ```go
 // Resizing resizes the resources allocated to a pod
@@ -200,13 +200,13 @@ type Resizing struct {
 }
 ```
 
-Resizing has the metadata of a pod to resize and a value of ResizeRequest that holds the status of a resizing request, which indicates whether the resizing is feasible or not, and new resource requirements of the pod.
+`Resizing` has (the copy of) the metadata of a pod to resize and a value of `ResizeRequest` that holds the status of a resizing request, for example, which indicates whether the resizing is feasible or not, and new resource requirements of the pod.
 
-Once the 'Scheduler' determine whether a resource resizing on a pod is feasible, or not, it notifies to the API server via this Resizing API.
-ObjectMeta.Namespace/Name are set to the Namespace and Name of the pod to resize and ResizeRequest is set with new resource requirements.
+Once the Scheduler determine whether a resource resizing on a pod is feasible, or not, it notifies of the feasibility to the API server via this Resizing API.
+`ObjectMeta.Namespace/Name` are set to the Namespace and Name of the pod to resize and `ResizeRequest` is set with new resource requirements.
 
-Given a Resizing API operation, the ResizeStatus of the PodSpec of a Pod is updated according to that of the Resizing operation.
-Additionally, if the ResizeStatus is ResizeDone, the API server updates the ResourceRequirement of each container of a pod with new resource requirements on ETCD.
+Given a Resizing API operation, `ResizeStatus` of the PodSpec of a Pod is updated according to that of the Resizing operation.
+Additionally, if `ResizeStatus` is `ResizeDone`, the API server updates the `ResourceRequirement` of each container of a pod with new resource requirements on ETCD.
 
 * **PodResized**
 
