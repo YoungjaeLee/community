@@ -185,7 +185,7 @@ Type PodSpec {
 `RequestStatus` represents the status of a resource resizing request.
 `ResizeRequested` indicates that resource resizing is requested.
 `ResizeAccepted` and `ResizeRejected` means that the requested resource resizing is accepted and rejected, respectively, by the Scheduler.
-`ResizeDone` indicates that the resource allocated to the pod has been resized through cgroup updates or container restart by Kubelet, then the API server has achknowledged and updated the pod spec on ETCD with the new resource requirement.
+`ResizeDone` indicates that the Kubelet has resized the pod with cgroup updates or container restart and the API server has achknowledged it, then updated the pod spec on ETCD with the new resource requirement.
 `NewResources` is a map indexed by a container’s name and its each entry holds new resource requirements of a container that needs to resize.
 
 Given a new PodSpec with new resource requirements from a client, first the API server validates it.
@@ -214,8 +214,8 @@ type Resizing struct {
 
 `Resizing` has (the copy of) the metadata of a pod to resize and a value of `ResizeRequest` that holds the status of a resizing request, for example, which indicates whether the resizing is feasible or not, and new resource requirements of the pod.
 
-Once the Scheduler determine whether a resource resizing on a pod is feasible, or not, it notifies of the feasibility to the API server via this Resizing API.
-`ObjectMeta.Namespace/Name` are set to the Namespace and Name of the pod to resize and `ResizeRequest` is set with new resource requirements.
+Once the Scheduler determines whether resizing is feasible, or not, it notifies of the feasibility to the API server via this Resizing API.
+`ObjectMeta.Namespace/Name` are set to the Namespace and Name of a pod to resize and `ResizeRequest` is set with new resource requirements.
 
 Given a Resizing API operation, `ResizeStatus` of the PodSpec of a Pod is updated according to that of the Resizing operation.
 Additionally, if `ResizeStatus` is `ResizeDone`, the API server updates the `ResourceRequirement` of each container of a pod with new resource requirements on ETCD.
@@ -294,9 +294,9 @@ This describes the sequence of a pod-level vertical scaling example to resize th
 
 6., 7. The Kubelet updates the PodResized condition to “Accepted”.
 
-8. The Kubelet acknowledges that the resizing request for the pod is accepted and resizes the allocated resources to the pod by cgroup updates or container restart according to its resize policy.
+8. The Kubelet acknowledges that the resizing request for the pod is accepted, then resizes the allocated resources to the pod either by cgroup updates or with container restart, according to its resize policy.
 
-9. The Kubelet modifies the status of the PodResized condition to Done after confirming that the update on the cgroup configuration of all the containers to resize is done, or the containers are successfully restarted, then issues a Resizing API operation with ResizeRequest of the "Done" status.
+9. After confirming that the cgroup updates are done, or the containers are successfully restarted, the Kubelet modifies the status of the PodResized condition to Done, then issues a Resizing API operation with ResizeRequest of the "Done" status.
 
 10. The API server updates the ResourceRequirements of the PodSpec with new resource configurations. Now, it completes to resize the pod to have 2 CPUs.
 
