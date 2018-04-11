@@ -55,20 +55,24 @@ There are some limitations. The details will be described at the end of this doc
 
 To express the policy for resizing in a pod spec, we introduce resource attribute `resizePolicy` with the following choices for value:
 * RestartOnly. (the current behavior, default)
-* ContainerRestartOnly
+* ContainerRestart
 * LiveResizeable.
 
-This attribute will be available per resource (such as cpu, memory) and so is adequate to indicate whether the workload can handle and prefer a change in each resource’s allocation for it without restarting.
+This attribute will be available per resource (such as cpu, memory) and so is adequate to indicate in which way the workload can handle a change in each resource’s allocation for it without restarting a pod.
 With potentially multiple containers and multiple resizeable resources for each in a Pod, the response to an update of the pod spec will be determined by the a precedence order among the attribute values with RestartOnly dominating ContainerRestartOnly and LiveResizeable and ContainerRestartOnly dominating LiveResizeable, i.e., if two resources have been resized in the update to the spec and one of them has a policy of RestartOnly then the pod would be restarted to realize both updates.
 
 We can optionally introduce an action annotation `resizeAction` with following choices for value:
-* Restart. (default)
+* Restart
 * InPlaceResize
 * InPlaceResizePreferred
 
-If used, this would be included as part of the patch or appropriate update command providing the spec update for the resize.
-It would indicate the preference of user at the time of resize.
-Specifically, Restart for `resizeAction` would indicate that the pod could be restarted for the corresponding resizing of resource(s), InPlaceResize would indicate that the pod won't be restarted when the resize can be realized live or with container restart, and InPlaceResizePreferred would indicate that the resize would be realized preferrably without pod restart but if that fails for any reason to accomplish it with a pod restart.
+This new annotation would indicate an user's preference on a way in which resource resizing is executed and its main purpose is to express a fallback option when the attempt to resize in-place fails for some reasons.
+If used, it would be included as part of the patch or appropriate update command providing the spec update for the resize
+
+Specifically, `InPlaceResizePreferred` indicates that the resize would be realized preferrably without pod restart, but if the in-place resizing (which is executed live or with container restart) fails for any reason (e.g. the resized pod isn't fit to the current node), the resizing request would be accomplished with a pod restart.
+`InPlaceResize` indicates that the pod won't be restarted if the resize cannot be realized in the in-place manner.
+So, the pod would remain in the failure status (e.g. `ResizeRejected`) and an user may take additional actions in order to resolve this. 
+Restart for `resizeAction` indicates that the pod would be restarted for resizing of resource(s) regardless of whether the resource(s)/workload is possible to resize live or with container restart, or not. 
 
 An example of the usage of resizePolicy attribute in a pod spec:
 
